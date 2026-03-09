@@ -73,7 +73,18 @@ export async function POST(req: NextRequest) {
 
     // 2. 异步执行储存任务
     try {
-      const result = await processKnowledge(url, true);
+      // 增加内部超时控制。Vercel 最大时长为 60s，设置 54s 内部超时以预留时间发送 Telegram 回复
+      const timeoutMs = 54000;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error(`处理超时（超过 ${timeoutMs / 1000} 秒），请稍后重试或检查链接是否可正常访问。`)), timeoutMs);
+      });
+
+      // 使用 Promise.race 确保即使 processKnowledge 卡住，也能在 Vercel 杀掉进程前抛出错误并回复用户
+      const result = await Promise.race([
+        processKnowledge(url, true),
+        timeoutPromise
+      ]);
+
       // 3. 完成后回复
       await sendTelegramMessage(
         chatId,

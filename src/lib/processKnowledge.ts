@@ -40,51 +40,55 @@ export async function processKnowledge(
   let rawTranscript = "";
   let finalContent = "";
 
-  // ==========================================
-  // Step 1: 尝试极速获取纯字幕 (Tier 1)
-  // ==========================================
-  await sendEvent({ step: "parsing", message: "开始尝试极速获取音视频字幕..." });
-  console.log(`[BibiGPT] 尝试极速获取字幕: ${trimmedUrl}`);
-  try {
-    const subRes = await axios.get(
-      `https://api.bibigpt.co/api/v1/getSubtitle?url=${encodeURIComponent(trimmedUrl)}`,
-      {
-        headers: { Authorization: `Bearer ${BIBIGPT_KEY}` },
-        timeout: 30000,
-      }
-    );
+  // 如果不是直通模式，才需要单独提取字幕以便走 Gemini 深度提纯
+  if (!isDirectMode) {
+    // ==========================================
+    // Step 1: 尝试极速获取纯字幕 (Tier 1)
+    // ==========================================
+    await sendEvent({ step: "parsing", message: "开始尝试极速获取音视频字幕..." });
+    console.log(`[BibiGPT] 尝试极速获取字幕: ${trimmedUrl}`);
+    try {
+      const subRes = await axios.get(
+        `https://api.bibigpt.co/api/v1/getSubtitle?url=${encodeURIComponent(trimmedUrl)}`,
+        {
+          headers: { Authorization: `Bearer ${BIBIGPT_KEY}` },
+          timeout: 20000,
+        }
+      );
 
-    let subtitlesArray: { text?: string; content?: string }[] = [];
-    const possiblePaths = [
-      subRes.data?.detail,
-      subRes.data?.subtitles,
-      subRes.data?.data?.detail,
-      subRes.data?.data?.subtitles,
-      subRes.data?.data?.data,
-      subRes.data?.data,
-    ];
+      let subtitlesArray: { text?: string; content?: string }[] = [];
+      const possiblePaths = [
+        subRes.data?.detail,
+        subRes.data?.subtitles,
+        subRes.data?.data?.detail,
+        subRes.data?.data?.subtitles,
+        subRes.data?.data?.data,
+        subRes.data?.data,
+      ];
 
-    for (const path of possiblePaths) {
-      if (Array.isArray(path) && path.length > 0) {
-        subtitlesArray = path;
-        break;
+      for (const path of possiblePaths) {
+        if (Array.isArray(path) && path.length > 0) {
+          subtitlesArray = path;
+          break;
+        }
       }
+
+      if (subtitlesArray.length > 0) {
+        rawTranscript = subtitlesArray
+          .map((item: { text?: string; content?: string }) => item.text || item.content || "")
+          .join(" ")
+          .trim();
+      } else if (typeof subRes.data === "string") {
+        rawTranscript = subRes.data.trim();
+      }
+    } catch (subErr) {
+      console.warn("[BibiGPT 获取字幕失败，将直接进入降级总结]:", subErr instanceof Error ? subErr.message : "未知错误");
+      await sendEvent({ message: "获取字幕出现问题，将尝试直接总结" });
     }
 
-    if (subtitlesArray.length > 0) {
-      rawTranscript = subtitlesArray
-        .map((item: { text?: string; content?: string }) => item.text || item.content || "")
-        .join(" ")
-        .trim();
-    } else if (typeof subRes.data === "string") {
-      rawTranscript = subRes.data.trim();
-    }
-  } catch (subErr) {
-    console.warn("[BibiGPT 获取字幕失败，将直接进入降级总结]:", subErr instanceof Error ? subErr.message : "未知错误");
-    await sendEvent({ message: "获取字幕出现问题，将尝试直接总结" });
+    await sendEvent({ step: "parsing_done", message: `字幕获取完毕，字数: ${rawTranscript.length}` });
   }
 
-  await sendEvent({ step: "parsing_done", message: `字幕获取完毕，字数: ${rawTranscript.length}` });
   await sendEvent({ step: "purifying", message: "开始 AI 提纯阶段..." });
 
   // ==========================================
