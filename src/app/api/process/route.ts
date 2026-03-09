@@ -75,7 +75,6 @@ export async function POST(request: NextRequest) {
       let result: ProcessResponse;
       let rawTranscript = "";
       let finalContent = "";
-      let isVisualBypass = false;
 
       try {
         // ==========================================
@@ -135,7 +134,6 @@ export async function POST(request: NextRequest) {
           } else {
             await sendEvent({ message: "字数较少或无字幕，触发视觉总结直通车..." });
           }
-          isVisualBypass = true;
           
           let bibiSummary = "";
 
