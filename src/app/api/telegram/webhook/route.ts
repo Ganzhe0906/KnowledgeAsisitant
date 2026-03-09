@@ -44,7 +44,10 @@ export async function POST(req: NextRequest) {
     // 保持内存不会无限增长
     if (processedMessages.size > 1000) {
       const iterator = processedMessages.values();
-      processedMessages.delete(iterator.next().value);
+      const firstValue = iterator.next().value;
+      if (firstValue !== undefined) {
+        processedMessages.delete(firstValue);
+      }
     }
 
     const chatId = message.chat.id;
