@@ -50,6 +50,11 @@ async function handler(req: NextRequest) {
       
       const errMsg = processError instanceof Error ? processError.message : "未知错误";
       
+      // 获取当前是第几次重试 (QStash Header)
+      const retriedCountStr = req.headers.get("Upstash-Retried");
+      const retriedCount = retriedCountStr ? parseInt(retriedCountStr, 10) : 0;
+      const maxRetries = 3; // 与 webhook 接口配置的 retries: 3 保持一致
+      
       // 如果发生特定错误，可能不需要 QStash 重试（例如用户发了无效网址或 API 没配），则返回 200，并告知用户
       // 如果是超时等网络原因，抛出错误，QStash 会接收到 500 然后启动重试机制 (最多 retry 设定的次数)
       const isFatalError = errMsg.includes("URL 格式不正确") || errMsg.includes("未配置 API Key");
@@ -57,6 +62,14 @@ async function handler(req: NextRequest) {
       if (isFatalError) {
         await sendTelegramMessage(chatId, `❌ <b>处理失败</b> (不可恢复错误)\n\n${errMsg}`);
         return NextResponse.json({ status: "failed_non_retryable", error: errMsg }, { status: 200 }); // 返回 200 阻止 QStash 再次重试
+      }
+      
+      // 处理可重试错误（例如超时）的 Telegram 通知
+      if (retriedCount < maxRetries) {
+        const nextTry = retriedCount + 1;
+        await sendTelegramMessage(chatId, `⚠️ <b>处理遇到问题 (如超时或网络波动)</b>\n\n系统即将自动进行第 ${nextTry} 次尝试 (共 ${maxRetries} 次)\n\n<i>详情: ${errMsg}</i>`);
+      } else {
+        await sendTelegramMessage(chatId, `❌ <b>最终失败</b>\n\n已达到最大重试次数 (${maxRetries} 次)，任务已放弃。\n\n<i>最后一次错误: ${errMsg}</i>`);
       }
       
       throw processError; // 让 QStash 捕获，触发退避重试
