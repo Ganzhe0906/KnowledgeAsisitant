@@ -124,8 +124,8 @@ export async function processKnowledge(
         throw new Error("返回结果为空");
       }
     } catch (fallbackErr) {
-      console.warn("[BibiGPT 视觉总结彻底失败，已被兜底拦截]:", fallbackErr);
-      bibiSummary = "⚠️ **解析被拦截或无内容**：该视频缺乏可提取的文本，且平台的反爬虫机制屏蔽了标题与描述的获取。对于此类极端的纯视觉素材，建议直接点击原链接查看动作演示。";
+      console.warn("[BibiGPT 视觉总结失败]:", fallbackErr);
+      throw new Error("BibiGPT 无法解析此内容，可能是视频过长、无有效文本或受平台反爬虫限制。");
     }
 
     finalContent = `> ⚡ **${isDirectMode ? "直通模式使用内置总结" : "字数不足500，触发视觉素材直通车"}**\n\n${bibiSummary}\n\n---\n**原始链接**：${trimmedUrl}\n**处理时间**：${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
@@ -245,7 +245,7 @@ ${finalContent.substring(0, 2000)}`;
   const bridgeUrl = process.env.OBSIDIAN_BRIDGE_URL?.trim();
   const bridgeApiKey = process.env.OBSIDIAN_API_KEY?.trim() || 'ai-diary-mcp-key';
 
-  if (bridgeUrl) {
+  if (bridgeUrl && result.content) {
     try {
       await sendEvent({ message: `正在全自动化推送至 Obsidian (${result.folder} 目录)...` });
       await axios.post(bridgeUrl, {

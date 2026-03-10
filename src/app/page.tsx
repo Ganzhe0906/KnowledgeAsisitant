@@ -7,8 +7,8 @@ import { Loader2, CheckCircle2, AlertCircle, Sparkles, Terminal } from "lucide-r
 
 const cn = (...inputs: Parameters<typeof clsx>) => twMerge(clsx(inputs));
 
-// URL 提取正则，用于从大段文本中匹配出 http/https 链接
-const EXTRACT_URL_REGEX = /(https?:\/\/[^\s]+)/;
+// URL 提取正则，匹配标准 URL 字符，防止包含中文或全角标点
+const EXTRACT_URL_REGEX = /(https?:\/\/[a-zA-Z0-9-._~:/?#[\]@!$&'()*+,;=%]+)/;
 
 type ProcessStatus =
   | "idle"
@@ -165,7 +165,7 @@ export default function Home() {
               type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="支持直接粘贴 B站/抖音 的分享文案或链接"
+              placeholder="支持直接粘贴 B站/抖音/小红书/公众号 等分享文案或链接"
               disabled={isProcessing}
               className={cn(
                 "w-full h-14 px-5 rounded-xl",
