@@ -106,7 +106,7 @@ export async function processKnowledge(
 
     try {
       const summaryRes = await axios.get(
-        `https://api.bibigpt.co/api/v1/summarize?url=${encodeURIComponent(trimmedUrl)}&isRefresh=true`,
+        `https://api.bibigpt.co/api/v1/summarize?url=${encodeURIComponent(trimmedUrl)}`,
         {
           headers: {
             Authorization: `Bearer ${BIBIGPT_KEY}`,

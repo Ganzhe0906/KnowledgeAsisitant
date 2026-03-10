@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
-import { processKnowledge, URL_REGEX } from "@/lib/processKnowledge";
+// 为了通过 QStash 实现真正的异步并避免 Vercel 平台超时限制，将 processKnowledge 移至 process-queue 接口执行
+import { URL_REGEX } from "@/lib/processKnowledge";
+import { Client } from "@upstash/qstash";
 
 export const maxDuration = 60;
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_ALLOWED_USER_ID = process.env.TELEGRAM_ALLOWED_USER_ID;
+const QSTASH_TOKEN = process.env.QSTASH_TOKEN;
 
 // 简单的内存缓存，用于记录已处理的 message_id，防止 Telegram 超时重试导致重复处理
 const processedMessages = new Set<number>();
@@ -68,34 +71,44 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "ok" });
     }
 
-    // 1. 回复正在储存
-    await sendTelegramMessage(chatId, "⏳ 正在储存...");
-
-    // 2. 异步执行储存任务
-    try {
-      // 增加内部超时控制。Vercel 最大时长为 60s，设置 54s 内部超时以预留时间发送 Telegram 回复
-      const timeoutMs = 54000;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error(`处理超时（超过 ${timeoutMs / 1000} 秒），请稍后重试或检查链接是否可正常访问。`)), timeoutMs);
-      });
-
-      // 使用 Promise.race 确保即使 processKnowledge 卡住，也能在 Vercel 杀掉进程前抛出错误并回复用户
-      const result = await Promise.race([
-        processKnowledge(url, true),
-        timeoutPromise
-      ]);
-
-      // 3. 完成后回复
-      await sendTelegramMessage(
-        chatId,
-        `✅ <b>已完成</b>\n\n<b>标题</b>: ${result.title}\n<b>内容已成功推送到 Obsidian</b>`
-      );
-    } catch (processError: unknown) {
-      console.error("处理失败:", processError);
-      const errMsg = processError instanceof Error ? processError.message : "未知错误";
-      await sendTelegramMessage(chatId, `❌ <b>处理失败</b>\n\n${errMsg}`);
+    if (!QSTASH_TOKEN) {
+      await sendTelegramMessage(chatId, "❌ 未配置 QSTASH_TOKEN 环境变量，无法启用后台队列。");
+      return NextResponse.json({ status: "error", error: "Missing QSTASH_TOKEN" }, { status: 500 });
     }
 
+    // 1. 回复正在加入队列
+    await sendTelegramMessage(chatId, "⏳ 正在排队处理中，耗时取决于视频长度，请稍候...");
+
+    // 2. 将耗时的储存任务发送给 Upstash QStash
+    const qstashClient = new Client({ token: QSTASH_TOKEN });
+    
+    // 获取当前请求的主机名作为回调地址。生产环境可能需要通过配置或者 req.url 动态获取。
+    const protocol = req.headers.get("x-forwarded-proto") || "https";
+    const host = req.headers.get("host");
+    let baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `${protocol}://${host}`;
+    
+    // 强制清理可能带有的尾部斜杠
+    baseUrl = baseUrl.replace(/\/$/, "");
+
+    try {
+      await qstashClient.publishJSON({
+        url: `${baseUrl}/api/process-queue`,
+        body: {
+          url: url,
+          chatId: chatId,
+          isDirectMode: true // 直通模式
+        },
+        // 这里配置 QStash 重试次数，设为 3 次
+        // QStash 会使用指数退避策略在失败后重试
+        retries: 3
+      });
+      console.log("已成功发送到 QStash 队列", `${baseUrl}/api/process-queue`);
+    } catch (qErr) {
+      console.error("QStash 发送失败:", qErr);
+      await sendTelegramMessage(chatId, "❌ <b>排队失败</b>，请检查 QStash 配置或服务状态。");
+    }
+
+    // 3. 立即返回 200，让 Telegram 停止等待
     return NextResponse.json({ status: "ok" });
   } catch (error) {
     console.error("Telegram webhook error:", error);
