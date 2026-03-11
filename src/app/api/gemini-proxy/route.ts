@@ -24,11 +24,14 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(response.data);
   } catch (error: unknown) {
-    const err = error as any;
-    console.error("Gemini Proxy Error:", err.response?.data || err.message);
-    return NextResponse.json(
-      err.response?.data || { error: "Internal Proxy Error", message: err.message },
-      { status: err.response?.status || 500 }
-    );
+    if (axios.isAxiosError(error)) {
+      console.error("Gemini Proxy Error:", error.response?.data || error.message);
+      return NextResponse.json(
+        error.response?.data || { error: "Internal Proxy Error", message: error.message },
+        { status: error.response?.status || 500 }
+      );
+    }
+    const fallbackErr = error as Error;
+    return NextResponse.json({ error: "Internal Proxy Error", message: fallbackErr.message }, { status: 500 });
   }
 }
