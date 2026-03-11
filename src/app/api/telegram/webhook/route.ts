@@ -10,11 +10,11 @@ const TELEGRAM_ALLOWED_USER_ID = process.env.TELEGRAM_ALLOWED_USER_ID;
 // 简单的内存缓存，用于记录已处理的 message_id，防止 Telegram 超时重试导致重复处理
 const processedMessages = new Set<number>();
 
-async function sendTelegramMessage(chatId: string | number, text: string, replyMarkup?: any) {
+async function sendTelegramMessage(chatId: string | number, text: string, replyMarkup?: Record<string, unknown>) {
   if (!TELEGRAM_BOT_TOKEN) return;
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
   try {
-    const payload: any = {
+    const payload: Record<string, unknown> = {
       chat_id: chatId,
       text: text,
       parse_mode: "HTML",
