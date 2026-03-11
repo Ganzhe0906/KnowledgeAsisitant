@@ -23,11 +23,12 @@ export async function POST(req: NextRequest) {
     );
 
     return NextResponse.json(response.data);
-  } catch (error: any) {
-    console.error("Gemini Proxy Error:", error.response?.data || error.message);
+  } catch (error: unknown) {
+    const err = error as any;
+    console.error("Gemini Proxy Error:", err.response?.data || err.message);
     return NextResponse.json(
-      error.response?.data || { error: "Internal Proxy Error", message: error.message },
-      { status: error.response?.status || 500 }
+      err.response?.data || { error: "Internal Proxy Error", message: err.message },
+      { status: err.response?.status || 500 }
     );
   }
 }
